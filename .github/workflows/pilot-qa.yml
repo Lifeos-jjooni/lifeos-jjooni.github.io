@@ -23,6 +23,11 @@ jobs:
           test -f pilot-v2/advisory.mjs
           test -f pilot-v2/calendar.mjs
           test -f pilot-v2/core.mjs
+          test -f pilot-v2/requests.mjs
+          grep -q 'LIFEOS_REQUEST_V1' pilot-v2/requests.mjs
+          expected='advisory.mjs app.mjs calendar.mjs config.mjs core.mjs google.mjs icon.svg index.html jobs.mjs manifest.webmanifest requests.mjs sheets.mjs style.css sw.js'
+          actual=$(find pilot-v2 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | paste -sd ' ' -)
+          test "$actual" = "$expected"
           grep -q 'LIFEOS_CORE_EVENT_V1' pilot-v2/core.mjs
           grep -q 'cp dist/config.mjs dist/v2-pilot/config.mjs' .github/workflows/pages.yml
           echo 'PILOT_STATIC_PREFLIGHT_PASS'
