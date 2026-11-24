@@ -9,7 +9,7 @@ export function validateAdvice(r){
 }
 export function projectAdvice(rows,now=Date.now()){
  if(!Array.isArray(rows)||rows.length>1000)throw Error('ADVICE_LIMIT');const m=new Map();
- for(const r of rows){validateAdvice(r);if(m.has(r[1])&&canonical(m.get(r[1]))!==canonical(r))throw Error('ADVICE_ID_COLLISION');m.set(r[1],r);}
+ for(const [i,r] of rows.entries()){try{validateAdvice(r);}catch{throw Error('ADVICE_ROW_INVALID_'+(i+2));}if(m.has(r[1])&&canonical(m.get(r[1]))!==canonical(r))throw Error('ADVICE_ID_COLLISION');m.set(r[1],r);}
  return [...m.values()].sort((a,b)=>Date.parse(b[4])-Date.parse(a[4])).map(r=>({id:r[1],agent:r[2],category:r[3],issued:r[4],expires:r[5],title:r[6],action:r[7],evidence:r[8],status:Date.parse(r[4])>now+300000?'FUTURE':Date.parse(r[5])<=now?'EXPIRED':'CURRENT'}));
 }
 export async function adviceTaskId(id){if(!/^adv_[a-f0-9]{32}$/.test(id))throw Error('ADVICE_ID');return 'task_'+(await sha256('LIFEOS-ADVICE-TASK-V1:'+id)).slice(0,32);}
@@ -30,12 +30,13 @@ export function advisoryStore({fileId,token,signal,fetcher=fetch}){
 
 // Pure deterministic triage. Only actual OPEN tasks with a known urgency qualify.
 // Advice, calendar attendance and missing data never become verified obligations.
-export function mustDo(events,today){
+export function focusPlan(events,today){
  const {tasks}=project(events);
  const rows=tasks.filter(t=>!t.conflict&&t.state?.status==='OPEN').map(t=>{
   const s=t.state,overdue=!!s.due_date&&s.due_date<today,dueToday=s.due_date===today;
-  const tier=overdue?0:dueToday?1:s.priority==='P0'?2:99;
+  const tier=s.priority==='P0'&&(overdue||dueToday)?0:overdue?1:dueToday?2:s.priority==='P0'?3:99;
   return {id:t.task_id,head:t.heads[0],title:s.title,priority:s.priority,due:s.due_date,tier,reason:overdue?'등록된 마감일 경과':dueToday?'오늘 등록 마감일 도래':'긴급 우선순위로 등록됨'};
  }).filter(t=>t.tier<99).sort((x,y)=>x.tier-y.tier||x.priority.localeCompare(y.priority)||(x.due||'9999').localeCompare(y.due||'9999')||x.id.localeCompare(y.id));
- return rows.slice(0,3);
+ return {rows:rows.slice(0,3),total:rows.length,conflicts:tasks.filter(t=>t.conflict).length};
 }
+export function mustDo(events,today){return focusPlan(events,today).rows;}

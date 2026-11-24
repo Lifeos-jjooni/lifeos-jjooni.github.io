@@ -13,13 +13,13 @@ export async function normalizeEvent(calendarId,e){
  const instance=e.originalStartTime?.date||e.originalStartTime?.dateTime;const validInstance=typeof instance==='string'&&(day(instance)||(/(Z|[+-]\d\d:\d\d)$/.test(instance)&&Number.isFinite(Date.parse(instance))));
  const key=typeof e.iCalUID==='string'&&e.iCalUID.length>0&&e.iCalUID.length<=1024&&(!e.recurringEventId||validInstance)?['ical',e.iCalUID,validInstance?(day(instance)?instance:new Date(instance).toISOString()):'single']:['event',calendarId,e.id];
  const digest=await sha256(JSON.stringify(key[0]==='event'?[calendarId,e.id]:key));
- const task_id='task_'+digest.slice(0,32);
- if(e.status==='cancelled')return {task_id,cancelled:true};
+ const task_id='task_'+digest.slice(0,32),legacy_id='task_'+(await sha256(JSON.stringify([calendarId,e.id]))).slice(0,32),legacy_ids=legacy_id===task_id?[]:[legacy_id];
+ if(e.status==='cancelled')return {task_id,legacy_ids,cancelled:true};
  if(!['confirmed','tentative'].includes(e.status)||!safeTitle(e.summary)||['private','confidential'].includes(e.visibility)||e.eventType&&e.eventType!=='default')return null;
  const raw=e.start?.date||e.start?.dateTime;
  const due=e.start?.date?raw:typeof raw==='string'&&/(Z|[+-]\d\d:\d\d)$/.test(raw)&&Number.isFinite(Date.parse(raw))?new Date(Date.parse(raw)+9*3600000).toISOString().slice(0,10):null;
  if(!day(due))return null;
- return {task_id,cancelled:false,title:e.summary,due_date:due,time:e.start?.date?'종일':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(raw))};
+ return {task_id,legacy_ids,cancelled:false,title:e.summary,due_date:due,time:e.start?.date?'종일':new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(raw))};
 }
 // No persisted source IDs, raw descriptions, attendees or locations.
 // Import plan is a candidate only. No writes to Google Calendar.
@@ -29,10 +29,10 @@ export function planImport(rows,events,selected){
  const ids=new Set(selected);if(ids.size!==selected.length)throw Error('DUPLICATE_SELECTION');
  for(const r of rows){
   if(!r||!/^task_[a-f0-9]{32}$/.test(r.task_id)||seen.has(r.task_id))throw Error('SOURCE_DUPLICATE');seen.add(r.task_id);
-  const t=current.get(r.task_id);
+  const matches=[r.task_id,...(r.legacy_ids||[])].filter(id=>current.has(id));const t=current.get(matches[0]);
   if(r.cancelled){if(t)cancelled.push(r.task_id);continue;}
   if(!safeTitle(r.title)||!day(r.due_date))throw Error('SOURCE_INVALID');
-  if(t){if(!t.state||original.get(r.task_id)?.due_date!==r.due_date||original.get(r.task_id)?.title!==r.title)changed.push(r.task_id);else existing.push(r.task_id);continue;}
+  if(t){if(!t.state||matches.length>1||original.get(t.task_id)?.due_date!==r.due_date||original.get(t.task_id)?.title!==r.title)changed.push(r.task_id);else existing.push(r.task_id);continue;}
   if(ids.has(r.task_id))add.push(r);
  }
  if([...ids].some(id=>!seen.has(id)))throw Error('UNKNOWN_SELECTION');
@@ -69,7 +69,7 @@ export function groupCalendarRows(rows){
  for(const rs of groups.values()){
   const live=rs.filter(r=>!r.cancelled),first=live[0]||rs[0];
   if(live.length&&rs.some(r=>r.cancelled||r.title!==first.title||r.due_date!==first.due_date||r.time!==first.time)){ambiguous++;continue;}
-  result.push({...first,calendar:[...new Set(rs.map(r=>r.calendar))].join(' / ')});
+  result.push({...first,legacy_ids:[...new Set(rs.flatMap(r=>r.legacy_ids||[]))],calendar:[...new Set(rs.map(r=>r.calendar))].join(' / ')});
  }
  return {rows:result,ambiguous};
 }

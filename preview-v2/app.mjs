@@ -1,6 +1,7 @@
 import {project,makeEvent,newId,safeTitle} from './core.mjs';
-import {ADVICE_HEADER,projectAdvice,advisoryStore,adviceTaskId,dailyHTaskId,growthWeek,mustDo} from './advisory.mjs';
+import {ADVICE_HEADER,projectAdvice,advisoryStore,adviceTaskId,dailyHTaskId,growthWeek,focusPlan} from './advisory.mjs';
 import {sheetsCore} from './sheets.mjs';
+import {REQUEST_HEADER,safeRequest,requestRow,projectRequests,requestsStore,requestTaskId} from './requests.mjs';
 import {planImport,kstWindow,calendarAdapter,groupCalendarRows} from './calendar.mjs';
 import {JOB_HEADER,jobRow,projectJobs,dispatchText,jobsStore} from './jobs.mjs';
 import {googleConfig} from './config.mjs';
@@ -8,8 +9,9 @@ import {configReady,requestGoogleToken,verifyGoogleToken,googleCoreFiles,enrollm
 const el=x=>document.getElementById(x);let events=[],device=null,mode=null,editing=null,proposalUsed=false,filter='OPEN',epoch=0,busy=false,controller=null,session=null,store=null,files=null,pending=null,timer=null,creating=false,gisReady=false,hiddenAt=null,hideTimer=null;
 let calSelected=new Set(),calData=[],openHistory=new Set();
 let calSession=null,calApi=null,calLists=[],calChosen=new Set(),calLoaded=false,calTimer=null,calGeneration=0,calAbort=null,calBatch=false;
-let page='home',adviceRows=[],adviceConnected=false,adviceCreating=false;
+let page='home',adviceRows=[],adviceConnected=false,adviceCreating=false,adviceTimer=null,adviceMissing=false,adviceChecked=null;
 let jobRows=[],jobStore=null,jobFiles=null,jobPending=null,jobCreating=false;
+let requestRows=[],requestStore=null,requestPending=null,requestCreating=false,requestChecked=null;
 const demoTitles=['가상 일정 확인','가상 준비물 점검','가상 할 일 검토','가상 AI 제안 확인'];
 const enabled=window.top===window.self&&configReady(googleConfig,location.origin);
 const enrolling=window.top===window.self&&enrollmentReady(googleConfig,location.origin);
@@ -22,11 +24,11 @@ function controls(){
  const draftOpen=!el('editor').hidden;
  if(draftOpen){for(const b of el('nav').querySelectorAll('button'))b.disabled=true;for(const b of el('tasks').querySelectorAll('button'))b.disabled=true;for(const b of el('summary').querySelectorAll('button'))b.disabled=true;for(const b of el('filters').querySelectorAll('button'))b.disabled=true;el('newTask').disabled=true;}
  el('retryCore').disabled=busy||!pending;el('refreshCore').disabled=busy||!!pending||draftOpen;el('proposal').disabled=busy||!!pending||proposalUsed||mode!=='demo';
- el('createCore').disabled=busy||creating;el('jobsCreate').disabled=busy||jobCreating;el('jobsConnect').disabled=busy||!!jobPending||!!pending;for(const b of el('jobsArea').querySelectorAll('button,input,select'))b.disabled=busy||!!jobPending||!!pending;const retry=el('retryJob');if(retry)retry.disabled=busy||!jobPending;el('cancelEdit').disabled=busy||!!pending;el('form').inert=!draftOpen;el('lock').disabled=false;el('revokeGoogle').hidden=mode!=='live';el('revokeGoogle').disabled=busy||calBatch||!!pending||!!jobPending;el('adviceConnect').disabled=mode!=='live'||busy||!!pending||calBatch||!!jobPending;el('adviceCreate').disabled=mode!=='live'||busy||!!pending||adviceCreating||calBatch||!!jobPending;el('hMission').disabled=busy||!!pending||calBatch||!!jobPending;
+ el('createCore').disabled=busy||creating;el('jobsCreate').disabled=busy||jobCreating;el('jobsConnect').disabled=busy||!!jobPending||!!pending;for(const b of el('jobsArea').querySelectorAll('button,input,select'))b.disabled=busy||!!jobPending||!!pending;const retry=el('retryJob');if(retry)retry.disabled=busy||!jobPending;el('cancelEdit').disabled=busy||!!pending;el('form').inert=!draftOpen;el('lock').disabled=false;el('revokeGoogle').hidden=mode!=='live';el('revokeGoogle').disabled=busy||calBatch||!!pending||!!jobPending;el('adviceConnect').disabled=mode!=='live'||busy||!!pending||calBatch||!!jobPending;el('adviceCreate').disabled=mode!=='live'||busy||!!pending||adviceCreating||calBatch||!!jobPending;el('hMission').disabled=busy||!!pending||calBatch||!!jobPending;el('requestConnect').disabled=mode!=='live'||busy||!!pending||calBatch||!!jobPending||!!requestPending;el('requestCreate').disabled=mode!=='live'||busy||!!pending||calBatch||!!jobPending||!!requestPending||requestCreating;for(const b of el('requestArea').querySelectorAll('button,input,textarea,select'))b.disabled=busy||!!pending||calBatch||!!jobPending||!!requestPending;el('requestRetry').disabled=busy||!requestPending||!!pending||!!jobPending||calBatch;for(const b of el('focusRows').querySelectorAll('button.complete-action'))b.disabled=busy||!!pending||calBatch||!!jobPending;
 }
 function resetDraft(){editing=null;el('form').reset();el('liveTitle').value='';el('editor').hidden=true;el('formFeedback').textContent='';}
 function clear(message='데이터 표시 삭제 · 연결 대기'){
- epoch++;resetCalendar();adviceRows=[];adviceConnected=false;adviceCreating=false;el('adviceList').replaceChildren();el('homeAdvice').replaceChildren();el('triAdvice').textContent='실시간 전략 판정 미연결';el('adviceStatus').textContent='아직 연결되지 않음';el('adviceCreate').hidden=true;el('hMissionStatus').textContent='';el('growthWeek').replaceChildren();el('focusRows').replaceChildren();el('focusAdvice').replaceChildren();el('focusStatus').textContent='';el('focusCount').textContent='';clearTimeout(hideTimer);hideTimer=null;hiddenAt=null;document.body.classList.remove('backgrounded');controller?.abort();controller=null;clearTimeout(timer);timer=null;session=null;store=null;files=null;pending=null;creating=false;events=[];openHistory.clear();device=null;mode=null;jobRows=[];jobStore=null;jobFiles=null;jobPending=null;jobCreating=false;calSelected.clear();calData=[];el('calendarDemo').hidden=true;el('calConnect').hidden=true;el('calDisconnect').hidden=true;el('calSources').hidden=true;el('calSources').replaceChildren();el('calConnection').textContent='';el('homeCalRows').replaceChildren();el('homeCalStatus').textContent='Google Calendar · 연결 전';el('calRows').replaceChildren();el('calStatus').textContent='';el('jobsArea').hidden=true;el('jobsConnect').hidden=true;el('jobsCreate').hidden=true;el('jobsList').replaceChildren();el('jobsStatus').textContent='';el('jobsForm').reset();el('dispatchText').value='';el('dispatchPanel').hidden=true;el('pin').textContent='';el('pinPanel').hidden=true;busy=false;proposalUsed=false;filter='OPEN';resetDraft();el('tasks').replaceChildren();el('summary').textContent='';el('dashboard').hidden=true;el('welcome').hidden=false;el('connectionLabel').textContent='연결 전';setPage('home');el('homeTasks').replaceChildren();el('homeJobSummary').textContent='';el('briefText').textContent='';el('growthHistory').replaceChildren();el('homeXp').textContent='';el('growthXp').textContent='';el('growthLevel').textContent='';el('growthToday').textContent='';el('homeProgress').value=0;el('growthProgress').value=0;el('start').hidden=false;el('google').hidden=false;el('lock').hidden=true;el('createCore').hidden=true;el('retryCore').hidden=true;el('status').textContent=message;controls();
+ epoch++;resetCalendar();requestRows=[];requestStore=null;requestPending=null;requestCreating=false;requestChecked=null;el('requestText').value='';el('requestList').replaceChildren();el('requestArea').hidden=true;el('requestCreate').hidden=true;el('requestRetry').hidden=true;el('requestStatus').textContent='요청함 연결 전';el('manualRunStatus').textContent='';el('homeRequestStatus').textContent='요청함 연결 전';clearTimeout(adviceTimer);adviceTimer=null;adviceMissing=false;adviceChecked=null;adviceRows=[];adviceConnected=false;adviceCreating=false;el('adviceList').replaceChildren();el('homeAdvice').replaceChildren();el('triAdvice').textContent='실시간 전략 판정 미연결';el('adviceStatus').textContent='아직 연결되지 않음';el('homeAdviceStatus').textContent='자문함 연결 전';el('adviceCreate').hidden=true;el('hMissionStatus').textContent='';el('growthWeek').replaceChildren();el('focusRows').replaceChildren();el('focusAdvice').replaceChildren();el('focusStatus').textContent='';el('focusCount').textContent='';clearTimeout(hideTimer);hideTimer=null;hiddenAt=null;document.body.classList.remove('backgrounded');controller?.abort();controller=null;clearTimeout(timer);timer=null;session=null;store=null;files=null;pending=null;creating=false;events=[];openHistory.clear();device=null;mode=null;jobRows=[];jobStore=null;jobFiles=null;jobPending=null;jobCreating=false;calSelected.clear();calData=[];el('calendarDemo').hidden=true;el('calConnect').hidden=true;el('calDisconnect').hidden=true;el('calSources').hidden=true;el('calSources').replaceChildren();el('calConnection').textContent='';el('homeCalRows').replaceChildren();el('homeCalStatus').textContent='Google Calendar · 연결 전';el('calRows').replaceChildren();el('calStatus').textContent='';el('jobsArea').hidden=true;el('jobsConnect').hidden=true;el('jobsCreate').hidden=true;el('jobsList').replaceChildren();el('jobsStatus').textContent='';el('jobsForm').reset();el('dispatchText').value='';el('dispatchPanel').hidden=true;el('pin').textContent='';el('pinPanel').hidden=true;busy=false;proposalUsed=false;filter='OPEN';resetDraft();el('tasks').replaceChildren();el('summary').textContent='';el('dashboard').hidden=true;el('welcome').hidden=false;el('connectionLabel').textContent='연결 전';setPage('home');el('homeTasks').replaceChildren();el('homeJobSummary').textContent='';el('briefText').textContent='';el('growthHistory').replaceChildren();el('homeXp').textContent='';el('growthXp').textContent='';el('growthLevel').textContent='';el('growthToday').textContent='';el('homeProgress').value=0;el('growthProgress').value=0;el('start').hidden=false;el('google').hidden=false;el('lock').hidden=true;el('createCore').hidden=true;el('retryCore').hidden=true;el('status').textContent=message;controls();
 }
 function active(e){return e===epoch&&(!controller||!controller.signal.aborted);}
 function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=fn;return b;}
@@ -36,7 +38,7 @@ const statusLabel={OPEN:'미완료',DONE:'완료',ARCHIVED:'보관'},priorityLab
 const timeText=t=>{const d=new Date(t);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(d):'시각 미확인';};
 function setPage(name){
  page=name;
- for(const [n,id] of Object.entries({home:'homePage',tasks:'tasksPage',jobs:'jobsPage',calendar:'calendarPage',growth:'growthPage',inbox:'inboxPage'}))el(id).hidden=n!==name;
+ for(const [n,id] of Object.entries({home:'homePage',tasks:'tasksPage',jobs:'jobsPage',calendar:'calendarPage',growth:'growthPage',inbox:'inboxPage',ask:'askPage'}))el(id).hidden=n!==name;
  for(const b of el('nav').querySelectorAll('[data-page]')){if(b.dataset.page===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
 }
 function openEditor(isEdit=false){
@@ -61,7 +63,7 @@ function renderHome(tasks){
  const hist=el('growthHistory');hist.replaceChildren();for(const c of credits.sort((a,b)=>b.time.localeCompare(a.time)).slice(0,20)){const row=document.createElement('div');row.className='home-task';const t=document.createElement('span'),n=document.createElement('strong');t.textContent=c.title;n.textContent='+'+c.xp+' XP';row.append(t,n);hist.append(row);}if(!credits.length)hist.textContent=pending?'동기화 확인 필요':'완료한 업무가 아직 없습니다.';renderJobSummary();renderFocus();renderAdvisory();renderGrowthWeek();
 }
 el('homeAdd').onclick=()=>{setPage('tasks');resetDraft();openEditor();};
-for(const [id,target] of Object.entries({homeTasksLink:'tasks',homeCalendar:'calendar',homeGrowth:'growth',homeJobs:'jobs',homePlaud:'inbox',homeAdviceLink:'inbox'}))el(id).onclick=()=>setPage(target);
+for(const [id,target] of Object.entries({homeTasksLink:'tasks',homeCalendar:'calendar',homeGrowth:'growth',homeJobs:'jobs',homePlaud:'inbox',homeAdviceLink:'inbox',homeAsk:'ask'}))el(id).onclick=()=>setPage(target);
 function syncTheme(){const night=document.documentElement.classList.contains('night');el('themeToggle').textContent=night?'라이트':'다크';el('themeToggle').setAttribute('aria-pressed',String(night));}document.documentElement.classList.toggle('night',matchMedia('(prefers-color-scheme: dark)').matches);syncTheme();el('themeToggle').onclick=()=>{document.documentElement.classList.toggle('night');syncTheme();};
 
 
@@ -70,9 +72,10 @@ const adviceCategory={MORNING:'아침 전략',MIDDAY:'중간 점검',EVENING:'�
 function renderFocus(){
  const root=el('focusRows');root.replaceChildren();el('focusCount').textContent='';el('focusAdvice').replaceChildren();
  if(pending){el('focusStatus').textContent='원장 동기화 확인 필요 · 우선순위 산정 보류';return;}
- const rows=mustDo(events,day());el('focusCount').textContent=rows.length+' / 3';
- el('focusStatus').textContent='등록된 미완료 업무 기준 · 연체, 오늘 마감, 긴급 순서';
- if(!rows.length){root.textContent='확인된 긴급·오늘 마감 업무 없음. 새로운 의무는 추정하지 않습니다.';return;}
+ const {rows,total,conflicts}=focusPlan(events,day());el('focusCount').textContent=rows.length+' / '+total;
+ el('focusStatus').textContent='등록된 미완료 업무 기준 · 긴급 마감 우선, 연체, 오늘 마감, 기타 긴급'+(total>3?' · 외 '+(total-3)+'건':'')+(conflicts?' · 충돌 '+conflicts+'건 별도 확인 필요':'');
+ if(!rows.length){root.textContent=conflicts?'순위를 확정할 수 없는 충돌 업무가 있습니다.':'확인된 긴급·오늘 마감 업무 없음. 새로운 의무는 추정하지 않습니다.';}
+ if(conflicts||total>3)root.append(button('전체 할 일 확인',()=>setPage('tasks')));
  for(const [n,t] of rows.entries()){
   const item=document.createElement('article'),rank=document.createElement('span'),body=document.createElement('div'),title=document.createElement('strong'),reason=document.createElement('p'),meta=document.createElement('p');item.className='focus-item';rank.className='focus-rank';rank.textContent=String(n+1).padStart(2,'0');title.textContent=t.title;reason.textContent='선정 이유 · '+t.reason;meta.className='muted';meta.textContent='원장 등록 기한 · '+(t.due||'미정')+' / '+priorityLabel[t.priority];body.append(title,reason,meta);
   const action=button('완료',()=>add('COMPLETE',t.id,t.head));action.className='complete-action';action.setAttribute('aria-label',t.title+' 필수 과제 완료');item.append(rank,body,action);root.append(item);
@@ -94,6 +97,7 @@ el('hMission').onclick=async()=>{
 };
 function renderAdvisory(){
  const list=el('adviceList'),home=el('homeAdvice');list.replaceChildren();home.replaceChildren();el('focusAdvice').replaceChildren();el('triAdvice').textContent='실시간 전략 판정 미연결';
+ el('homeAdviceStatus').textContent=mode==='demo'?'가상 모드 · AI 미연결':adviceConnected?'자문함 조회 '+timeText(adviceChecked)+' · 발행자 별도 확인 필요':adviceMissing?'자문함 최초 생성 필요':'자문함 미조회 / 확인 필요';
  if(!adviceConnected){if(mode==='demo')el('adviceStatus').textContent='가상 모드 · 실제 AI 자문 없음';return;}
  const rows=projectAdvice(adviceRows),current=rows.filter(r=>r.status==='CURRENT');
  for(const r of rows.slice(0,30)){
@@ -109,7 +113,7 @@ function renderAdvisory(){
   list.append(card);
  }
  if(!rows.length)list.textContent='수신된 조언 없음';
- const candidates=current.filter(r=>r.category==='TASK').slice(0,3);if(candidates.length){const box=el('focusAdvice'),h=document.createElement('h3');h.textContent='AI 추천 · 확인 필요';box.append(h);for(const r of candidates){const p=document.createElement('p');p.textContent=r.title+' · '+r.agent+' (기록상 발행자)';box.append(p);}box.append(button('제안 검토',()=>setPage('inbox')));}
+ const candidates=current.filter(r=>r.category==='TASK').slice(0,3);if(candidates.length){const box=el('focusAdvice'),h=document.createElement('h3');h.textContent='AI 추천 · 확인 필요';box.append(h);for(const r of candidates){const p=document.createElement('p');p.textContent=r.title+' · '+r.agent+' (기록상 발행자) · '+timeText(r.issued);box.append(p);}box.append(button('제안 검토',()=>setPage('inbox')));}
  const brief=current.find(r=>['MORNING','MIDDAY','EVENING'].includes(r.category));if(brief){const p=document.createElement('p');p.textContent=brief.agent+' · '+brief.title+' (기록상 발행 · 별도 확인 필요)';home.append(p);}
  const h=current.find(r=>r.category==='PROJECT_H');if(h){el('hPrompt').textContent=h.title;el('growthPrompt').textContent=h.title+(h.action?' · '+h.action:'');}
  const tri=current.find(r=>r.category==='TRI_POD');if(tri)el('triAdvice').textContent=tri.title+' · '+timeText(tri.issued)+' · 기록상 '+tri.agent+' 조언 (신호 원천 미검증)';
@@ -120,12 +124,13 @@ async function connectAdvice(create=false){
   const af=googleCoreFiles({token:session.token,signal:controller.signal,kind:'LIFEOS_ADVICE_V1',header:ADVICE_HEADER,title:'JJOONI LIFE OS — ADVISORY',rowCount:1002});let id=await af.discover();
   if(!id&&create){adviceCreating=true;id=await af.create();}
   if(!active(e)||document.hidden)return;
-  if(!id){el('adviceCreate').hidden=false;el('adviceStatus').textContent='비공개 자문함을 최초 1회 생성하세요.';return;}
+  if(!id){adviceMissing=true;el('adviceCreate').hidden=false;el('adviceStatus').textContent='비공개 자문함을 최초 1회 생성하세요.';return;}
   const rows=await advisoryStore({fileId:id,token:session.token,signal:controller.signal}).read();if(!active(e)||document.hidden)return;
-  adviceRows=rows;adviceConnected=true;el('adviceCreate').hidden=true;el('adviceStatus').textContent='비공개 자문함 조회 완료 · '+rows.length+'개 기록 · 발행자 및 내용 별도 확인 필요';
- }catch{if(active(e)){adviceRows=[];adviceConnected=false;el('adviceStatus').textContent='자문함 확인 실패 · 생성 여부 및 접근 권한 확인 필요';}}
+  adviceRows=rows;adviceConnected=true;adviceMissing=false;adviceChecked=Date.now();el('adviceCreate').hidden=true;el('adviceStatus').textContent='비공개 자문함 조회 완료 · '+rows.length+'개 기록 · 발행자 및 내용 별도 확인 필요';
+ }catch(err){if(active(e)){adviceRows=[];adviceConnected=false;adviceChecked=null;const row=/^ADVICE_ROW_INVALID_(\d+)$/.exec(err.message);el('adviceStatus').textContent=row?'자문함 '+row[1]+'행 형식 오류 · 해당 행 확인 필요':'자문함 확인 실패 · 생성 여부 및 접근 권한 확인 필요';}}
  finally{if(active(e)){busy=false;renderHome(project(events).tasks);controls();}}
 }
+function scheduleAdvice(delay=300000){clearTimeout(adviceTimer);const e=epoch;adviceTimer=setTimeout(async()=>{if(!active(e)||mode!=='live')return;if(document.hidden||busy||pending||jobPending||calBatch||!el('editor').hidden){scheduleAdvice(15000);return;}if(!adviceMissing)await connectAdvice();else renderHome(project(events).tasks);if(active(e)&&mode==='live')scheduleAdvice();},delay);}
 el('adviceConnect').onclick=()=>connectAdvice();
 el('adviceCreate').onclick=()=>{if(!adviceCreating&&confirm('Google Drive에 별도 비공개 자문함을 만들까요?'))connectAdvice(true);};
 
@@ -166,7 +171,7 @@ function render(){
  }
  el('retryCore').hidden=!pending;controls();
 }
-function show(modeName){mode=modeName;device=newId('dev');el('start').hidden=true;el('google').hidden=true;el('lock').hidden=false;el('dashboard').hidden=false;el('welcome').hidden=true;el('connectionLabel').textContent=mode==='live'?'Google 연결됨':'가상 모드';setPage('home');el('title').hidden=mode!=='demo';el('liveTitle').hidden=mode==='demo';el('refreshCore').hidden=mode==='demo';el('jobsConnect').hidden=mode==='demo';el('jobsArea').hidden=mode!=='demo';el('calendarDemo').hidden=mode!=='demo';el('calConnect').hidden=mode!=='live';el('demoSourceLabel').hidden=mode!=='demo';if(mode==='demo')loadCalDemo();el('demoJob').hidden=mode!=='demo';el('jobTitle').hidden=mode==='demo';render();renderJobs();}
+function show(modeName){mode=modeName;device=newId('dev');el('start').hidden=true;el('google').hidden=true;el('lock').hidden=false;el('dashboard').hidden=false;el('welcome').hidden=true;el('connectionLabel').textContent=mode==='live'?'Google 연결됨':'가상 모드';setPage('home');el('title').hidden=mode!=='demo';el('liveTitle').hidden=mode==='demo';el('refreshCore').hidden=mode==='demo';el('jobsConnect').hidden=mode==='demo';el('jobsArea').hidden=mode!=='demo';el('calendarDemo').hidden=mode!=='demo';el('calConnect').hidden=mode!=='live';el('demoSourceLabel').hidden=mode!=='demo';if(mode==='demo')loadCalDemo();el('demoJob').hidden=mode!=='demo';el('jobTitle').hidden=mode==='demo';el('requestArea').hidden=mode!=='demo';el('requestText').hidden=mode==='demo';el('requestSample').hidden=mode!=='demo';el('requestConnect').hidden=mode!=='live';render();renderJobs();renderRequests();}
 async function commit(event){
  if(!store||busy)return false;const e=epoch;busy=true;controls();
  try{const result=await store.append(event);if(!active(e))return false;events=result.events;pending=null;const current=project(events).tasks.find(t=>t.task_id===event.task_id);el('status').textContent=current?.conflict?'기록 충돌 · 확인 필요':'저장 완료 · Google 동기화 확인';return true;}
@@ -177,8 +182,58 @@ async function add(event_type,task_id,base_event_id,payload={}){
  if(!mode||busy||pending||jobPending||calBatch)return false;try{const e=makeEvent({event_type,task_id,base_event_id,payload,device_id:device});if(mode==='demo'){const next=[...events,e];project(next);events=next;render();return true;}return await commit(e);}catch{el('status').textContent='허용되지 않는 변경입니다.';return false;}
 }
 async function loadCore(id){
- const e=epoch;store=sheetsCore({fileId:id,token:session.token,signal:controller.signal});const r=await store.read();if(!active(e)||document.hidden)throw Error('SESSION_ENDED');events=r.events;el('createCore').hidden=true;show('live');el('status').textContent='Google 연결됨 · 내 할 일 동기화 완료';
+ const e=epoch;store=sheetsCore({fileId:id,token:session.token,signal:controller.signal});const r=await store.read();if(!active(e)||document.hidden)throw Error('SESSION_ENDED');events=r.events;el('createCore').hidden=true;show('live');el('status').textContent='Google 연결됨 · 내 할 일 동기화 완료';scheduleAdvice(1500);
 }
+
+
+function renderRequests(){
+ const list=el('requestList');list.replaceChildren();const view=projectRequests(requestRows);
+ el('homeRequestStatus').textContent=mode==='demo'?'가상 요청함 · 실제 AI 미연결':!requestStore?'요청함 연결 전':requestPending?'저장 결과 확인 필요':view.filter(x=>x.status==='REQUESTED').length+'건 대기 · '+view.filter(x=>x.status==='ANSWERED').length+'건 답변 · 최근 조회 '+timeText(requestChecked);
+ for(const r of view.slice(0,30)){
+  const card=document.createElement('article'),q=document.createElement('strong'),meta=document.createElement('p');card.className='request-card';q.textContent=r.question||'취소된 요청';meta.className='muted';meta.textContent=({REQUESTED:'등록됨 · AI 인수 미확인',ANSWERED:'답변 수신 · 발행자 기록상 쭈니',CANCELLED:'취소 기록 · 원문 삭제 아님',CONFLICT:'동시 변경 충돌 · 확인 필요'}[r.status])+' · '+timeText(r.created);card.append(q,meta);
+  if(r.status==='REQUESTED')card.append(button('요청 취소',()=>{if(confirm('아직 답변되지 않은 요청을 취소 기록할까요? 저장된 원문은 삭제되지 않습니다.'))changeRequest(requestRow({request_id:r.id,kind:'CANCEL',base_id:r.root}));}));
+  if(r.answer){
+   const p=document.createElement('p');p.className='answer-text';p.textContent=(mode==='demo'?'가상 답변 예시 · ':'답변 · ')+r.answer.text;card.append(p);
+   for(const [index,t] of r.answer.tasks.entries()){
+    const row=document.createElement('div'),title=document.createElement('strong'),reason=document.createElement('p');row.className='request-task';title.textContent=t.title;reason.className='muted';reason.textContent=priorityLabel[t.priority]+' · '+(t.due_date||'기한 미정')+' · '+t.reason;row.append(title,reason,button('이 과제 등록',async()=>{
+     if(busy||pending||jobPending||calBatch||requestPending||!confirm('검토한 과제를 내 할 일에 등록할까요?'))return;const e=epoch;
+     const id=await requestTaskId(r.id,index);if(!active(e)||busy||pending||jobPending||calBatch||requestPending)return;
+     if(project(events).tasks.some(x=>x.task_id===id)){el('requestStatus').textContent='이미 등록된 과제입니다.';return;}
+     if(mode==='live'){
+      busy=true;controls();try{const latest=await requestStore.read();if(!active(e)||document.hidden)return;requestRows=latest.rows;requestChecked=Date.now();const now=latest.view.find(x=>x.id===r.id);if(now?.status!=='ANSWERED'||now.answer?.id!==r.answer.id){el('requestStatus').textContent='요청 상태 변경 · 최신 답변 확인 필요';return;}}catch{if(active(e))el('requestStatus').textContent='최신 요청 확인 실패 · 등록 중단';return;}finally{if(active(e)){busy=false;renderRequests();controls();}}
+     }
+     if(!active(e)||document.hidden)return;const ok=await add('CREATE',id,null,{title:t.title,priority:t.priority,due_date:t.due_date});if(active(e))el('requestStatus').textContent=ok?'선택 과제 등록 완료':'등록 결과 확인 필요';
+    }));card.append(row);
+   }
+  }
+  list.append(card);
+ }
+ if(!view.length)list.textContent='아직 등록된 요청이 없습니다.';
+ el('requestRetry').hidden=!requestPending;controls();
+}
+async function connectRequests(create=false){
+ if(mode!=='live'||!session||busy||pending||jobPending||calBatch||requestPending)return;const e=epoch;busy=true;controls();
+ try{const files=googleCoreFiles({token:session.token,signal:controller.signal,kind:'LIFEOS_REQUEST_V1',header:REQUEST_HEADER,title:'JJOONI LIFE OS — REQUESTS',rowCount:1002});let id=await files.discover();if(!id&&create){requestCreating=true;id=await files.create();}
+  if(!active(e)||document.hidden)return;
+  if(!id){requestStore=null;requestRows=[];el('requestCreate').hidden=false;el('requestArea').hidden=true;el('requestStatus').textContent='최초 1회 비공개 요청함을 생성하세요.';return;}
+  const s=requestsStore({fileId:id,token:session.token,signal:controller.signal}),r=await s.read();if(!active(e)||document.hidden)return;requestStore=s;requestRows=r.rows;requestChecked=Date.now();el('requestArea').hidden=false;el('requestCreate').hidden=true;el('requestStatus').textContent='요청함 조회 완료 · 자동 처리 연결 검증 전';
+ }catch{if(active(e)){requestStore=null;requestRows=[];el('requestArea').hidden=true;el('requestStatus').textContent='요청함 확인 실패 · 권한 및 저장 상태 확인 필요';}}
+ finally{if(active(e)){busy=false;renderRequests();}}
+}
+async function changeRequest(row,retry=false){
+ if(!mode||busy||pending||jobPending||calBatch||(!retry&&requestPending))return false;
+ const e=epoch;
+ if(mode==='demo'){requestRows=[...requestRows,row];if(row[3]==='REQUEST')requestRows.push(requestRow({request_id:row[2],kind:'ANSWER',base_id:row[1],agent:'JJOONI',text:'가상 예시입니다. 준비물 확인과 예약 확인으로 나눕니다.',payload:JSON.stringify({tasks:[{title:'가상 준비물 확인',priority:'P1',due_date:null,reason:'가상 부탁에서 추출'},{title:'가상 예약 확인',priority:'P2',due_date:null,reason:'가상 부탁에서 추출'}]})}));renderRequests();el('requestStatus').textContent='가상 예시 표시 · 실제 AI 호출 없음';return true;}
+ if(!requestStore)return false;busy=true;controls();
+ try{const r=await requestStore.append(row);if(!active(e))return false;requestRows=r.rows;requestChecked=Date.now();requestPending=null;const current=r.view.find(x=>x.id===row[2]);el('requestStatus').textContent=current?.status==='CONFLICT'?'동시 변경 충돌 · 확인 필요':row[3]==='REQUEST'?'요청 저장 및 재조회 완료 · AI 인수 미확인':'취소 기록 확인';return true;}
+ catch(err){if(!active(e))return false;if(err.message==='REQUEST_STALE'){requestRows=err.rows;requestPending=null;el('requestStatus').textContent='이미 변경된 요청 · 최신 상태를 확인하세요.';}else if(/OWNER_ONLY|REQUEST_SCHEMA|REQUEST_ROW_INVALID|REQUEST_ID_COLLISION|REQUEST_HTTP_40[13]|SESSION_ENDED/.test(err.message)){clear('요청함 권한 또는 형식 검증 실패 · 다시 연결하세요.');}else{requestPending=row;requestRows=[];el('requestStatus').textContent='저장 결과 미확정 · 동일 기록 재확인 필요';}return false;}
+ finally{if(active(e)){busy=false;renderRequests();}}
+}
+el('manualRunCopy').onclick=async()=>{try{await navigator.clipboard.writeText('JJOONI LIFE OS 양방향 일정 감시 자동화를 기존 스케줄을 변경하지 않고 지금 한 번 실행해 줘. 합성 QA 슬롯에는 기록하지 말고, 비공개 질문 내용은 승인된 수신 경로가 검증되기 전에는 읽거나 출력하지 마.');el('manualRunStatus').textContent='요청문 복사 완료 · ChatGPT에서 실행 요청하세요. 아직 실행되지 않았습니다.';}catch{el('manualRunStatus').textContent='복사 실패 · 예약 작업에서 직접 실행해 주세요.';}};
+el('requestConnect').onclick=()=>connectRequests();
+el('requestCreate').onclick=()=>{if(!requestCreating&&confirm('본인 Google Drive에 비공개 요청함을 만들까요? 비민감 요약만 저장하세요.'))connectRequests(true);};
+el('requestRetry').onclick=()=>{if(requestPending)changeRequest(requestPending,true);};
+el('requestForm').onsubmit=async e=>{e.preventDefault();const text=(mode==='demo'?el('requestSample').value:el('requestText').value).replace(/\s+/g,' ').trim();if(!safeRequest(text)){el('requestStatus').textContent='짧은 비민감 요약만 입력해 주세요.';return;}if(mode==='live'&&!confirm('요약한 요청을 본인 Google Drive에 저장할까요? AI 자동 전달은 아직 검증 전입니다.'))return;try{if(await changeRequest(requestRow({kind:'REQUEST',text})))el('requestText').value='';}catch{el('requestStatus').textContent='요청 등록 실패 · 입력 확인 필요';}};
 
 function renderJobs(){
  if(mode)renderJobSummary();
@@ -278,7 +333,7 @@ function renderCal(){
  const plan=planImport(calData,events,[]),changed=new Set(plan.changed),cancelled=new Set(plan.cancelled);
  for(const r of calData){
   if(r.cancelled&&!cancelled.has(r.task_id))continue;
-  const existing=current.has(r.task_id),label=document.createElement('label'),check=document.createElement('input'),info=document.createElement('span');check.type='checkbox';check.checked=!existing&&!r.cancelled&&calSelected.has(r.task_id);
+  const existing=current.has(r.task_id)||plan.existing.includes(r.task_id)||changed.has(r.task_id),label=document.createElement('label'),check=document.createElement('input'),info=document.createElement('span');check.type='checkbox';check.checked=!existing&&!r.cancelled&&calSelected.has(r.task_id);
   if(existing||r.cancelled){check.dataset.blocked='true';check.disabled=true;calSelected.delete(r.task_id);}
   check.onchange=()=>{if(check.checked){if(calSelected.size>=100){check.checked=false;el('calStatus').textContent='한 번에 최대 100건 선택';return;}calSelected.add(r.task_id);}else calSelected.delete(r.task_id);el('calStatus').textContent=calSelected.size+'건 선택';controls();};
   label.className='calRow';const title=r.cancelled?(current.get(r.task_id)?.state?.title||'기존 일정'):r.title;
@@ -289,7 +344,7 @@ function renderCal(){
 }
 el('calDays').onchange=el('calSource').onchange=resetCalSelection;
 el('calLoad').onclick=()=>mode==='demo'?loadCalDemo():loadCalLive();
-el('calAll').onclick=()=>{if(!mode||busy||calBatch||pending)return;const current=new Set(project(events).tasks.map(t=>t.task_id));calSelected=new Set(calData.filter(r=>!r.cancelled&&!current.has(r.task_id)).slice(0,100).map(r=>r.task_id));renderCal();};
+el('calAll').onclick=()=>{if(!mode||busy||calBatch||pending)return;const plan=planImport(calData,events,[]),blocked=new Set([...plan.existing,...plan.changed,...plan.cancelled]);calSelected=new Set(calData.filter(r=>!r.cancelled&&!blocked.has(r.task_id)).slice(0,100).map(r=>r.task_id));renderCal();};
 el('calNone').onclick=()=>{calSelected.clear();renderCal();};
 el('calImport').onclick=async()=>{
  if(!mode||!calSelected.size||busy||pending||jobPending||calBatch||!confirm('선택한 일정 제목과 날짜를 내 할 일에 등록할까요? 원본 일정은 변경하지 않습니다.'))return;
@@ -305,7 +360,7 @@ el('calImport').onclick=async()=>{
 
 el('start').onclick=()=>{clear();show('demo');el('status').textContent='가상 데이터 전용 · 저장/Google 연동 없음';};
 el('lock').onclick=()=>clear();
-el('revokeGoogle').onclick=()=>{if(mode!=='live'||!session||busy||pending||jobPending||calBatch||!confirm('Google 앱 접근 권한을 철회하고 연결을 종료할까요? 다시 연결할 때 동의가 필요합니다.'))return;const token=session.token;const oauth=globalThis.google?.accounts?.oauth2;clear('연결 종료 · Google 권한 철회 요청');try{if(!oauth?.revoke)throw Error('REVOKE_UNAVAILABLE');oauth.revoke(token,r=>{if(!mode)el('status').textContent=r?.successful===true?'Google 권한 철회 확인':'권한 철회 미확인 · Google 계정의 앱 액세스에서 확인하세요.';});}catch{el('status').textContent='권한 철회 미확인 · Google 계정에서 확인하세요.';}};
+el('revokeGoogle').onclick=()=>{if(mode!=='live'||!session||busy||pending||jobPending||calBatch||!confirm('Google 앱 접근 권한을 철회하고 연결을 종료할까요? 다시 연결할 때 동의가 필요합니다.'))return;const tokens=[...new Set([session.token,calSession?.token].filter(Boolean))];const oauth=globalThis.google?.accounts?.oauth2;clear('연결 종료 · Google 권한 철회 요청');const e=epoch;let remaining=tokens.length,confirmed=0;const finish=r=>{if(r?.successful===true)confirmed++;if(--remaining===0&&active(e)&&!mode)el('status').textContent=confirmed===tokens.length?'Google 권한 철회 확인':'권한 철회 일부 또는 전체 미확인 · Google 계정의 앱 액세스에서 확인하세요.';};for(const token of tokens){try{if(!oauth?.revoke)throw Error('REVOKE_UNAVAILABLE');oauth.revoke(token,finish);}catch{finish(null);}}};
 el('newTask').onclick=()=>{resetDraft();openEditor();};
 for(const b of el('nav').querySelectorAll('[data-page]'))b.onclick=()=>setPage(b.dataset.page);
 for(const b of el('editor').querySelectorAll('[data-due]'))b.onclick=()=>{el('due').value=b.dataset.due==='none'?'':day(Number(b.dataset.due));};
