@@ -1,5 +1,5 @@
 import {project,makeEvent,newId,safeTitle} from './core.mjs';
-import {ADVICE_HEADER,projectAdvice,advisoryStore,adviceTaskId,dailyHTaskId,growthWeek,mustDo} from './advisory.mjs';
+import {ADVICE_HEADER,projectAdvice,advisoryStore,adviceTaskId,dailyHTaskId,growthWeek,focusPlan} from './advisory.mjs';
 import {sheetsCore} from './sheets.mjs';
 import {planImport,kstWindow,calendarAdapter,groupCalendarRows} from './calendar.mjs';
 import {JOB_HEADER,jobRow,projectJobs,dispatchText,jobsStore} from './jobs.mjs';
@@ -22,7 +22,7 @@ function controls(){
  const draftOpen=!el('editor').hidden;
  if(draftOpen){for(const b of el('nav').querySelectorAll('button'))b.disabled=true;for(const b of el('tasks').querySelectorAll('button'))b.disabled=true;for(const b of el('summary').querySelectorAll('button'))b.disabled=true;for(const b of el('filters').querySelectorAll('button'))b.disabled=true;el('newTask').disabled=true;}
  el('retryCore').disabled=busy||!pending;el('refreshCore').disabled=busy||!!pending||draftOpen;el('proposal').disabled=busy||!!pending||proposalUsed||mode!=='demo';
- el('createCore').disabled=busy||creating;el('jobsCreate').disabled=busy||jobCreating;el('jobsConnect').disabled=busy||!!jobPending||!!pending;for(const b of el('jobsArea').querySelectorAll('button,input,select'))b.disabled=busy||!!jobPending||!!pending;const retry=el('retryJob');if(retry)retry.disabled=busy||!jobPending;el('cancelEdit').disabled=busy||!!pending;el('form').inert=!draftOpen;el('lock').disabled=false;el('revokeGoogle').hidden=mode!=='live';el('revokeGoogle').disabled=busy||calBatch||!!pending||!!jobPending;el('adviceConnect').disabled=mode!=='live'||busy||!!pending||calBatch||!!jobPending;el('adviceCreate').disabled=mode!=='live'||busy||!!pending||adviceCreating||calBatch||!!jobPending;el('hMission').disabled=busy||!!pending||calBatch||!!jobPending;
+ el('createCore').disabled=busy||creating;el('jobsCreate').disabled=busy||jobCreating;el('jobsConnect').disabled=busy||!!jobPending||!!pending;for(const b of el('jobsArea').querySelectorAll('button,input,select'))b.disabled=busy||!!jobPending||!!pending;const retry=el('retryJob');if(retry)retry.disabled=busy||!jobPending;el('cancelEdit').disabled=busy||!!pending;el('form').inert=!draftOpen;el('lock').disabled=false;el('revokeGoogle').hidden=mode!=='live';el('revokeGoogle').disabled=busy||calBatch||!!pending||!!jobPending;el('adviceConnect').disabled=mode!=='live'||busy||!!pending||calBatch||!!jobPending;el('adviceCreate').disabled=mode!=='live'||busy||!!pending||adviceCreating||calBatch||!!jobPending;el('hMission').disabled=busy||!!pending||calBatch||!!jobPending;for(const b of el('focusRows').querySelectorAll('button.complete-action'))b.disabled=busy||!!pending||calBatch||!!jobPending;
 }
 function resetDraft(){editing=null;el('form').reset();el('liveTitle').value='';el('editor').hidden=true;el('formFeedback').textContent='';}
 function clear(message='데이터 표시 삭제 · 연결 대기'){
@@ -70,9 +70,10 @@ const adviceCategory={MORNING:'아침 전략',MIDDAY:'중간 점검',EVENING:'�
 function renderFocus(){
  const root=el('focusRows');root.replaceChildren();el('focusCount').textContent='';el('focusAdvice').replaceChildren();
  if(pending){el('focusStatus').textContent='원장 동기화 확인 필요 · 우선순위 산정 보류';return;}
- const rows=mustDo(events,day());el('focusCount').textContent=rows.length+' / 3';
- el('focusStatus').textContent='등록된 미완료 업무 기준 · 연체, 오늘 마감, 긴급 순서';
- if(!rows.length){root.textContent='확인된 긴급·오늘 마감 업무 없음. 새로운 의무는 추정하지 않습니다.';return;}
+ const {rows,total,conflicts}=focusPlan(events,day());el('focusCount').textContent=rows.length+' / '+total;
+ el('focusStatus').textContent='등록된 미완료 업무 기준 · 긴급 마감 우선, 연체, 오늘 마감, 기타 긴급'+(total>3?' · 외 '+(total-3)+'건':'')+(conflicts?' · 충돌 '+conflicts+'건 별도 확인 필요':'');
+ if(!rows.length){root.textContent=conflicts?'순위를 확정할 수 없는 충돌 업무가 있습니다.':'확인된 긴급·오늘 마감 업무 없음. 새로운 의무는 추정하지 않습니다.';}
+ if(conflicts||total>3)root.append(button('전체 할 일 확인',()=>setPage('tasks')));
  for(const [n,t] of rows.entries()){
   const item=document.createElement('article'),rank=document.createElement('span'),body=document.createElement('div'),title=document.createElement('strong'),reason=document.createElement('p'),meta=document.createElement('p');item.className='focus-item';rank.className='focus-rank';rank.textContent=String(n+1).padStart(2,'0');title.textContent=t.title;reason.textContent='선정 이유 · '+t.reason;meta.className='muted';meta.textContent='원장 등록 기한 · '+(t.due||'미정')+' / '+priorityLabel[t.priority];body.append(title,reason,meta);
   const action=button('완료',()=>add('COMPLETE',t.id,t.head));action.className='complete-action';action.setAttribute('aria-label',t.title+' 필수 과제 완료');item.append(rank,body,action);root.append(item);
@@ -110,7 +111,7 @@ function renderAdvisory(){
   list.append(card);
  }
  if(!rows.length)list.textContent='수신된 조언 없음';
- const candidates=current.filter(r=>r.category==='TASK').slice(0,3);if(candidates.length){const box=el('focusAdvice'),h=document.createElement('h3');h.textContent='AI 추천 · 확인 필요';box.append(h);for(const r of candidates){const p=document.createElement('p');p.textContent=r.title+' · '+r.agent+' (기록상 발행자)';box.append(p);}box.append(button('제안 검토',()=>setPage('inbox')));}
+ const candidates=current.filter(r=>r.category==='TASK').slice(0,3);if(candidates.length){const box=el('focusAdvice'),h=document.createElement('h3');h.textContent='AI 추천 · 확인 필요';box.append(h);for(const r of candidates){const p=document.createElement('p');p.textContent=r.title+' · '+r.agent+' (기록상 발행자) · '+timeText(r.issued);box.append(p);}box.append(button('제안 검토',()=>setPage('inbox')));}
  const brief=current.find(r=>['MORNING','MIDDAY','EVENING'].includes(r.category));if(brief){const p=document.createElement('p');p.textContent=brief.agent+' · '+brief.title+' (기록상 발행 · 별도 확인 필요)';home.append(p);}
  const h=current.find(r=>r.category==='PROJECT_H');if(h){el('hPrompt').textContent=h.title;el('growthPrompt').textContent=h.title+(h.action?' · '+h.action:'');}
  const tri=current.find(r=>r.category==='TRI_POD');if(tri)el('triAdvice').textContent=tri.title+' · '+timeText(tri.issued)+' · 기록상 '+tri.agent+' 조언 (신호 원천 미검증)';
