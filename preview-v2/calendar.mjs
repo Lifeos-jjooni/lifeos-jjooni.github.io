@@ -10,10 +10,12 @@ export function kstWindow(days,now=Date.now()){
 const day=x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x)&&Number.isFinite(Date.parse(x))&&new Date(x).toISOString().slice(0,10)===x;
 export async function normalizeEvent(calendarId,e){
  if(typeof calendarId!=='string'||!calendarId||calendarId.length>1024||typeof e?.id!=='string'||!e.id||e.id.length>1024)throw Error('EVENT_ID_INVALID');
- const digest=await sha256(JSON.stringify([calendarId,e.id]));
+ const instance=e.originalStartTime?.date||e.originalStartTime?.dateTime;const validInstance=typeof instance==='string'&&(day(instance)||(/(Z|[+-]\d\d:\d\d)$/.test(instance)&&Number.isFinite(Date.parse(instance))));
+ const key=typeof e.iCalUID==='string'&&e.iCalUID.length>0&&e.iCalUID.length<=1024&&(!e.recurringEventId||validInstance)?['ical',e.iCalUID,validInstance?(day(instance)?instance:new Date(instance).toISOString()):'single']:['event',calendarId,e.id];
+ const digest=await sha256(JSON.stringify(key[0]==='event'?[calendarId,e.id]:key));
  const task_id='task_'+digest.slice(0,32);
  if(e.status==='cancelled')return {task_id,cancelled:true};
- if(!['confirmed','tentative'].includes(e.status)||!safeTitle(e.summary)||e.visibility==='private'||e.eventType&&e.eventType!=='default')return null;
+ if(!['confirmed','tentative'].includes(e.status)||!safeTitle(e.summary)||['private','confidential'].includes(e.visibility)||e.eventType&&e.eventType!=='default')return null;
  const raw=e.start?.date||e.start?.dateTime;
  const due=e.start?.date?raw:typeof raw==='string'&&/(Z|[+-]\d\d:\d\d)$/.test(raw)&&Number.isFinite(Date.parse(raw))?new Date(Date.parse(raw)+9*3600000).toISOString().slice(0,10):null;
  if(!day(due))return null;
@@ -55,6 +57,19 @@ export function calendarAdapter({token,signal,fetcher=fetch}){
   throw Error('CALENDAR_LIMIT');
  }
  async function calendars(){const items=await pages('/users/me/calendarList',{minAccessRole:'reader',maxResults:'100',fields:'nextPageToken,items(id,summary,primary,accessRole,deleted)'},200);return items.filter(x=>!x.deleted&&typeof x.id==='string'&&['owner','writer','reader'].includes(x.accessRole)).map(x=>({id:x.id,summary:typeof x.summary==='string'?x.summary:'캘린더',primary:x.primary===true}));}
- async function events(calendarId,days,now){if(typeof calendarId!=='string'||!calendarId||calendarId.length>1024)throw Error('CALENDAR_ID');const items=await pages('/calendars/'+encodeURIComponent(calendarId)+'/events',{...kstWindow(days,now),singleEvents:'true',showDeleted:'true',maxResults:'250',fields:'nextPageToken,items(id,status,summary,start,visibility,eventType)'},500);const start=kstWindow(days,now).timeMin.slice(0,10);return (await Promise.all(items.map(e=>normalizeEvent(calendarId,e)))).filter(r=>r&&(r.cancelled||r.due_date>=start));}
+ async function events(calendarId,days,now){if(typeof calendarId!=='string'||!calendarId||calendarId.length>1024)throw Error('CALENDAR_ID');const items=await pages('/calendars/'+encodeURIComponent(calendarId)+'/events',{...kstWindow(days,now),singleEvents:'true',showDeleted:'true',maxResults:'250',fields:'nextPageToken,items(id,status,summary,start,visibility,eventType,iCalUID,recurringEventId,originalStartTime)'},500);const start=kstWindow(days,now).timeMin.slice(0,10);return (await Promise.all(items.map(e=>normalizeEvent(calendarId,e)))).filter(r=>r&&(r.cancelled||r.due_date>=start));}
  return {calendars,events};
+}
+
+// Copies of a shared invitation use one canonical task ID when iCalUID and occurrence are supplied.
+// Inconsistent copies and live/cancelled mixtures are not safe to import automatically.
+export function groupCalendarRows(rows){
+ const groups=new Map(),result=[];let ambiguous=0;
+ for(const r of rows){if(!groups.has(r.task_id))groups.set(r.task_id,[]);groups.get(r.task_id).push(r);}
+ for(const rs of groups.values()){
+  const live=rs.filter(r=>!r.cancelled),first=live[0]||rs[0];
+  if(live.length&&rs.some(r=>r.cancelled||r.title!==first.title||r.due_date!==first.due_date||r.time!==first.time)){ambiguous++;continue;}
+  result.push({...first,calendar:[...new Set(rs.map(r=>r.calendar))].join(' / ')});
+ }
+ return {rows:result,ambiguous};
 }

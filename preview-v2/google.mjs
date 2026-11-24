@@ -35,7 +35,7 @@ export function requestGoogleToken({config,signal,enrollment=false,calendar=fals
  });
 }
 export function googleCoreFiles({token,fetcher=fetch,signal,kind=CORE_TAG,header=HEADER,title='JJOONI LIFE OS — CORE',rowCount=10002}){
- if(![CORE_TAG,'LIFEOS_AI_JOBS_V1'].includes(kind))throw Error('FILE_KIND');
+ if(![CORE_TAG,'LIFEOS_AI_JOBS_V1','LIFEOS_ADVICE_V1'].includes(kind))throw Error('FILE_KIND');
  const base='https://www.googleapis.com/drive/v3/files',sbase='https://sheets.googleapis.com/v4/spreadsheets';
  async function req(url,method='GET',data){
   if(signal?.aborted)throw Error('SESSION_ENDED');
