@@ -21,13 +21,13 @@ jobs:
           node-version: '22'
       - name: Build reviewed public-only source
         env:
-          LIFEOS_ENABLE_GOOGLE: ${{ vars.LIFEOS_ENABLE_GOOGLE }}
-          LIFEOS_ENROLLMENT: ${{ vars.LIFEOS_ENROLLMENT }}
-          LIFEOS_ORIGIN: ${{ vars.LIFEOS_ORIGIN }}
+          LIFEOS_ENABLE_GOOGLE: 'false'
+          LIFEOS_ENROLLMENT: 'true'
+          LIFEOS_ORIGIN: 'https://lifeos-jjooni.github.io'
           LIFEOS_PAGES_OWNER: ${{ github.repository_owner }}
           LIFEOS_PRODUCTION_BRANCH: main
-          LIFEOS_GOOGLE_CLIENT_ID: ${{ vars.LIFEOS_GOOGLE_CLIENT_ID }}
-          LIFEOS_OWNER_SUB_SHA256: ${{ vars.LIFEOS_OWNER_SUB_SHA256 }}
+          LIFEOS_GOOGLE_CLIENT_ID: '302183135622-i5s4ll3c8pa3dc29sk7uu1atqg7upmbd.apps.googleusercontent.com'
+          LIFEOS_OWNER_SUB_SHA256: ''
         run: node build.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
