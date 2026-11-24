@@ -1,2 +1,2 @@
-# Lifeos-jjooni
-Lifeos-jjooni.github.io
+# LIFE OS — public static shell
+This repository contains only the static application shell. Initial build is synthetic demo mode; Google connection is disabled until explicit setup and owner consent. No personal data, credentials, private repository history or runtime server are included. GitHub Pages uses its own Actions workflow; deployment only from main. Do not add private data to this repository.
