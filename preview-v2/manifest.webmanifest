@@ -1,0 +1,17 @@
+{
+  "name": "JJOONI LIFE OS",
+  "short_name": "LIFE OS",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ecf1ec",
+  "theme_color": "#173c31",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

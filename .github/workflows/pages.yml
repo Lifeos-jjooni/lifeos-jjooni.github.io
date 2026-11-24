@@ -33,6 +33,11 @@ jobs:
           mkdir -p dist/connect-v112
           find dist -maxdepth 1 -type f -exec cp {} dist/connect-v112/ \;
           node --input-type=module -e "import('./dist/connect-v112/config.mjs').then(({googleConfig:c})=>{if(!c.enabled||c.enrollment||!c.ownerSubSha256)process.exit(1);console.log('OWNER_CONNECTION_CONFIG_VERIFIED')})"
+      - name: Include isolated reviewed synthetic V2 preview
+        run: |
+          mkdir -p dist/preview-v2
+          cp preview-v2/*.mjs preview-v2/*.html preview-v2/*.css preview-v2/*.svg preview-v2/*.js preview-v2/*.webmanifest dist/preview-v2/
+          node --input-type=module -e "import('./dist/preview-v2/config.mjs').then(({googleConfig:c})=>{if(c.enabled||c.enrollment||c.clientId||c.ownerSubSha256)process.exit(1);console.log('SYNTHETIC_PREVIEW_ONLY')})"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
