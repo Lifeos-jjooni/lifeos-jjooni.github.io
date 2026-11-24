@@ -1,0 +1,28 @@
+name: V2 owner pilot preflight
+on:
+  pull_request:
+    paths: ['pilot-v2/**', '.github/workflows/pages.yml', '.github/workflows/pilot-qa.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static checks
+        run: |
+          for f in pilot-v2/*.mjs pilot-v2/*.js; do node --check "$f"; done
+          node --input-type=module -e "import('./pilot-v2/config.mjs').then(({googleConfig:c})=>{if(c.enabled||c.enrollment||c.clientId||c.ownerSubSha256)process.exit(1);console.log('SOURCE_CONFIG_DISABLED')})"
+          if grep -riE 'Jun Shin|mauveplace|[a-z0-9._%+-]+@gmail\.com' pilot-v2; then exit 1; fi
+          if grep -iE 'https?://[^ ]+\.github\.io' pilot-v2/index.html; then exit 1; fi
+          test -f pilot-v2/advisory.mjs
+          test -f pilot-v2/calendar.mjs
+          test -f pilot-v2/core.mjs
+          grep -q 'LIFEOS_CORE_EVENT_V1' pilot-v2/core.mjs
+          grep -q 'cp dist/config.mjs dist/v2-pilot/config.mjs' .github/workflows/pages.yml
+          echo 'PILOT_STATIC_PREFLIGHT_PASS'

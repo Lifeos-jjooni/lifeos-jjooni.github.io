@@ -38,6 +38,12 @@ jobs:
           mkdir -p dist/preview-v2
           cp preview-v2/*.mjs preview-v2/*.html preview-v2/*.css preview-v2/*.svg preview-v2/*.js preview-v2/*.webmanifest dist/preview-v2/
           node --input-type=module -e "import('./dist/preview-v2/config.mjs').then(({googleConfig:c})=>{if(c.enabled||c.enrollment||c.clientId||c.ownerSubSha256)process.exit(1);console.log('SYNTHETIC_PREVIEW_ONLY')})"
+      - name: Include parallel V2 owner pilot
+        run: |
+          mkdir -p dist/v2-pilot
+          cp pilot-v2/*.mjs pilot-v2/*.html pilot-v2/*.css pilot-v2/*.svg pilot-v2/*.js pilot-v2/*.webmanifest dist/v2-pilot/
+          cp dist/config.mjs dist/v2-pilot/config.mjs
+          node --input-type=module -e "import('./dist/v2-pilot/config.mjs').then(({googleConfig:c})=>{if(!c.enabled||c.enrollment||!c.ownerSubSha256||c.origin!=='https://lifeos-jjooni.github.io')process.exit(1);console.log('PILOT_OWNER_CONFIG_VERIFIED')})"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
